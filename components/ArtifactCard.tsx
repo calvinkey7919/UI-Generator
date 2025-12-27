@@ -34,7 +34,7 @@ const ArtifactCard: React.FC<ArtifactCardProps> = ({
                     className="artifact-iframe"
                     srcDoc={artifact.html}
                     title={artifact.styleName}
-                    sandbox="allow-scripts"
+                    sandbox="allow-scripts allow-same-origin"
                 />
             </div>
         </div>

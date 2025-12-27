@@ -32,7 +32,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({ artifact, onClose, is
                         <iframe
                             srcDoc={artifact.html}
                             title={artifact.styleName}
-                            sandbox="allow-scripts"
+                            sandbox="allow-scripts allow-same-origin"
                             style={{
                                 width: '100%',
                                 height: '100%',

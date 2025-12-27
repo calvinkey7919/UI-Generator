@@ -37,10 +37,10 @@ const DottedGlowBackground: React.FC<DottedGlowBackgroundProps> = ({
         resize();
         
         // Debounce resize handler to improve performance
-        let resizeTimeout: NodeJS.Timeout;
+        let resizeTimeout: number;
         const debouncedResize = () => {
             clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(resize, 100);
+            resizeTimeout = setTimeout(resize, 100) as unknown as number;
         };
         
         window.addEventListener('resize', debouncedResize);

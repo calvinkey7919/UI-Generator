@@ -10,10 +10,10 @@ interface ArtifactCardProps {
     artifact: Artifact;
     isFocused: boolean;
     onClick: () => void;
-    onFullscreen: (artifact: Artifact) => void;
-    onSave: (artifact: Artifact) => void;
-    isPaused: boolean;
-    speed: number;
+    onFullscreen?: (artifact: Artifact) => void;
+    onSave?: (artifact: Artifact) => void;
+    isPaused?: boolean;
+    speed?: number;
 }
 
 const ArtifactCard: React.FC<ArtifactCardProps> = ({

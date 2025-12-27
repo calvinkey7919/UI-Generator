@@ -10,11 +10,11 @@ import { XIcon } from './Icons';
 interface FullscreenModalProps {
     artifact: Artifact | null;
     onClose: () => void;
-    isPaused: boolean;
-    speed: number;
+    isPaused?: boolean;
+    speed?: number;
 }
 
-const FullscreenModal: React.FC<FullscreenModalProps> = ({ artifact, onClose, isPaused, speed }) => {
+const FullscreenModal: React.FC<FullscreenModalProps> = ({ artifact, onClose }) => {
     if (!artifact) return null;
 
     return (

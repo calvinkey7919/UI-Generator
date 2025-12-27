@@ -31,13 +31,7 @@ import {
     CopyIcon,
     CheckIcon,
     LibraryIcon,
-    TrashIcon,
-    WandIcon,
-    PlayIcon,
-    PauseIcon,
-    DownloadIcon,
-    GlobeIcon,
-    FileTextIcon
+    TrashIcon
 } from './components/Icons';
 
 function App() {
@@ -52,12 +46,6 @@ function App() {
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [placeholders, setPlaceholders] = useState<string[]>(INITIAL_PLACEHOLDERS);
   const [isCopied, setIsCopied] = useState(false);
-  const [isSpecCopied, setIsSpecCopied] = useState(false);
-  const [isActionBarCopied, setIsActionBarCopied] = useState(false);
-
-  // Global Animation Controls
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [animationSpeed, setAnimationSpeed] = useState<number>(1);
 
   // Component Library State
   const [savedComponents, setSavedComponents] = useState<LibraryItem[]>(() => {
@@ -87,17 +75,6 @@ function App() {
       localStorage.setItem('flash-ui-library', JSON.stringify(savedComponents));
   }, [savedComponents]);
 
-  // Mobile specific: Close artifact on back button gesture
-  useEffect(() => {
-      const handlePopState = (e: PopStateEvent) => {
-          if (focusedArtifactIndex !== null) {
-              setFocusedArtifactIndex(null);
-          }
-      };
-      window.addEventListener('popstate', handlePopState);
-      return () => window.removeEventListener('popstate', handlePopState);
-  }, [focusedArtifactIndex]);
-
   // Fix for mobile: reset scroll when focusing an item to prevent "overscroll" state
   useEffect(() => {
     if (focusedArtifactIndex !== null && window.innerWidth <= 1024) {
@@ -105,8 +82,6 @@ function App() {
             gridScrollRef.current.scrollTop = 0;
         }
         window.scrollTo(0, 0);
-        // Push state for back button handling on Android/Chrome
-        window.history.pushState({ focused: true }, '');
     }
   }, [focusedArtifactIndex]);
 
@@ -182,69 +157,11 @@ function App() {
       setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  const handleCopyCode = (customData?: string) => {
-      const dataToCopy = customData || drawerState.data;
-      if (dataToCopy) {
-          navigator.clipboard.writeText(dataToCopy);
-          if (customData) {
-            setIsActionBarCopied(true);
-            setTimeout(() => setIsActionBarCopied(false), 2000);
-          } else {
-            setIsCopied(true);
-            setTimeout(() => setIsCopied(false), 2000);
-          }
-      }
-  };
-
-  const handleDownloadCode = () => {
-      const dataToUse = drawerState.data || (focusedArtifactIndex !== null ? sessions[currentSessionIndex].artifacts[focusedArtifactIndex].html : null);
-      if (!dataToUse) return;
-      const blob = new Blob([dataToUse], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `flash-ui-component-${generateId()}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-  };
-
-  const handleCopyProjectSpec = async () => {
-      const dataToAnalyze = drawerState.data || (focusedArtifactIndex !== null ? sessions[currentSessionIndex].artifacts[focusedArtifactIndex].html : null);
-      if (!dataToAnalyze || isLoading) return;
-      setIsLoading(true);
-      try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `
-Analyze this UI component code:
-\`\`\`html
-${dataToAnalyze}
-\`\`\`
-
-Generate a detailed "Project Specification" markdown block that another AI tool (like Cursor or v0) can use to recreate this. Include:
-1. DESIGN PHILOSOPHY: The core visual metaphor.
-2. COLOR SYSTEM: HEX codes and usage patterns.
-3. COMPONENT ARCHITECTURE: Layout logic, flex/grid usage.
-4. MOTION RULES: Animation durations and easing.
-5. RESPONSIVENESS: How it should adapt to mobile.
-
-Return ONLY the markdown specification.
-          `.trim();
-          
-          const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: [{ role: 'user', parts: [{ text: prompt }] }]
-          });
-          
-          const spec = response.text || '';
-          navigator.clipboard.writeText(spec);
-          setIsSpecCopied(true);
-          setTimeout(() => setIsSpecCopied(false), 2000);
-      } catch (e) {
-          console.error("Failed to generate spec", e);
-      } finally {
-          setIsLoading(false);
+  const handleCopyCode = () => {
+      if (drawerState.data) {
+          navigator.clipboard.writeText(drawerState.data);
+          setIsCopied(true);
+          setTimeout(() => setIsCopied(false), 2000);
       }
   };
 
@@ -275,7 +192,7 @@ Return ONLY the markdown specification.
   };
 
   const handleOpenLibrary = () => {
-      setDrawerState({ isOpen: true, mode: 'library', title: 'Library', data: null });
+      setDrawerState({ isOpen: true, mode: 'library', title: 'Component Library', data: null });
   };
 
   const parseJsonStream = async function* (responseStream: AsyncGenerator<{ text: string }>) {
@@ -313,45 +230,6 @@ Return ONLY the markdown specification.
       }
   };
 
-  // Helper to inject the control script into artifacts
-  const injectControlScript = (html: string) => {
-    if (!html) return html;
-    const script = `
-<script>
-(function() {
-    function applyControls(isPaused, speed) {
-        const styleId = 'flash-ui-runtime-controls';
-        let styleEl = document.getElementById(styleId);
-        if (!styleEl) {
-            styleEl = document.createElement('style');
-            styleEl.id = styleId;
-            document.head.appendChild(styleEl);
-        }
-        
-        document.documentElement.style.setProperty('--flash-speed', speed || 1);
-        
-        styleEl.innerHTML = \`
-            * {
-                animation-play-state: \${isPaused ? 'paused' : 'running'} !important;
-            }
-        \`;
-    }
-
-    window.addEventListener('message', (e) => {
-        if (e.data && e.data.type === 'UPDATE_CONTROLS') {
-            applyControls(e.data.isPaused, e.data.speed);
-        }
-    });
-    
-    if (window.parentState) {
-        applyControls(window.parentState.isPaused, window.parentState.speed);
-    }
-})();
-</script>
-    `;
-    return html + script;
-  };
-
   const handleGenerateVariations = useCallback(async () => {
     const currentSession = sessions[currentSessionIndex];
     if (!currentSession || focusedArtifactIndex === null) return;
@@ -372,6 +250,12 @@ You are a master UI/UX designer. Generate 3 RADICAL CONCEPTUAL VARIATIONS of: "$
 **STRICT IP SAFEGUARD:**
 No names of artists. 
 Instead, describe the *Physicality* and *Material Logic* of the UI.
+
+**CREATIVE GUIDANCE:**
+1. Example: "Asymmetrical Primary Grid" (Heavy black strokes, rectilinear structure, flat primary pigments, high-contrast white space).
+2. Example: "Suspended Kinetic Mobile" (Delicate wire-thin connections, floating organic primary shapes, slow-motion balance, white-void background).
+3. Example: "Grainy Risograph Press" (Overprinted translucent inks, dithered grain textures, monochromatic color depth, raw paper substrate).
+4. Example: "Volumetric Spectral Fluid" (Generative morphing gradients, soft-focus diffusion, bioluminescent light sources, spectral chromatic aberration).
 
 **YOUR TASK:**
 For EACH variation:
@@ -418,83 +302,7 @@ Required JSON Output Format (stream ONE object per line):
       const currentSession = sessions[currentSessionIndex];
       if (currentSession && focusedArtifactIndex !== null) {
           const artifact = currentSession.artifacts[focusedArtifactIndex];
-          setDrawerState({ isOpen: true, mode: 'code', title: 'Source & Export', data: artifact.html });
-      }
-  };
-
-  const handleConvertToWebsite = async () => {
-      if (focusedArtifactIndex === null || isLoading) return;
-      const currentArtifact = sessions[currentSessionIndex].artifacts[focusedArtifactIndex];
-      
-      setIsLoading(true);
-      // Update status to streaming
-      setSessions(prev => prev.map((s, si) => si === currentSessionIndex ? {
-          ...s,
-          artifacts: s.artifacts.map((art, ai) => ai === focusedArtifactIndex ? { ...art, status: 'streaming' } : art)
-      } : s));
-
-      try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `
-You are a professional Web Architect. 
-Take the design language and component DNA from this HTML:
-\`\`\`html
-${currentArtifact.html}
-\`\`\`
-
-**GOAL:**
-Expand this single component into a FULL, professional landing page.
-The layout must include:
-1. A sticky navigation bar with logo and links.
-2. A hero section using the current component's visual core.
-3. Feature blocks, Testimonials, and a detailed Pricing section.
-4. A professional Footer.
-
-Maintain the core metaphor: "${currentArtifact.styleName}".
-Ensure the site is responsive and uses high-end typography.
-Use calc(durations / var(--flash-speed, 1)) for all transitions.
-
-Return ONLY the raw HTML/CSS for the complete page. No markdown fences.
-          `.trim();
-
-          const responseStream = await ai.models.generateContentStream({
-              model: 'gemini-3-flash-preview',
-              contents: [{ parts: [{ text: prompt }], role: "user" }],
-          });
-
-          let accumulatedHtml = '';
-          for await (const chunk of responseStream) {
-              const text = chunk.text;
-              if (typeof text === 'string') {
-                  accumulatedHtml += text;
-                  setSessions(prev => prev.map((sess, si) => 
-                      si === currentSessionIndex ? {
-                          ...sess,
-                          artifacts: sess.artifacts.map((art, ai) => 
-                              ai === focusedArtifactIndex ? { ...art, html: accumulatedHtml } : art
-                          )
-                      } : sess
-                  ));
-              }
-          }
-
-          let finalHtml = accumulatedHtml.trim();
-          if (finalHtml.startsWith('```html')) finalHtml = finalHtml.substring(7).trimStart();
-          if (finalHtml.startsWith('```')) finalHtml = finalHtml.substring(3).trimStart();
-          if (finalHtml.endsWith('```')) finalHtml = finalHtml.substring(0, finalHtml.length - 3).trimEnd();
-
-          setSessions(prev => prev.map((sess, si) => 
-              si === currentSessionIndex ? {
-                  ...sess,
-                  artifacts: sess.artifacts.map((art, ai) => 
-                      ai === focusedArtifactIndex ? { ...art, html: finalHtml, status: 'complete' } : art
-                  )
-              } : sess
-          ));
-      } catch (e) {
-          console.error("Website conversion failed", e);
-      } finally {
-          setIsLoading(false);
+          setDrawerState({ isOpen: true, mode: 'code', title: 'Source Code', data: artifact.html });
       }
   };
 
@@ -509,78 +317,6 @@ Return ONLY the raw HTML/CSS for the complete page. No markdown fences.
     }
 
     setIsLoading(true);
-
-    if (focusedArtifactIndex !== null && sessions[currentSessionIndex]) {
-        const currentArtifact = sessions[currentSessionIndex].artifacts[focusedArtifactIndex];
-        
-        setSessions(prev => prev.map((s, si) => si === currentSessionIndex ? {
-            ...s,
-            artifacts: s.artifacts.map((art, ai) => ai === focusedArtifactIndex ? { ...art, status: 'streaming' } : art)
-        } : s));
-
-        try {
-            const apiKey = process.env.API_KEY;
-            const ai = new GoogleGenAI({ apiKey });
-            
-            const refinePrompt = `
-You are a UI optimization engine.
-Existing Component HTML:
-\`\`\`html
-${currentArtifact.html}
-\`\`\`
-
-User Request for Change: "${trimmedInput}"
-
-**TASK:**
-Update the existing HTML/CSS to satisfy the user request.
-Maintain the core design direction: "${currentArtifact.styleName}".
-Include subtle, high-performance CSS/JS animations. 
-CRITICAL: Use the CSS variable var(--flash-speed, 1) to multiply your animation and transition durations (e.g., transition: all calc(0.3s / var(--flash-speed, 1)) ease).
-Return ONLY the raw updated HTML. No markdown fences.
-            `.trim();
-
-            const responseStream = await ai.models.generateContentStream({
-                model: 'gemini-3-flash-preview',
-                contents: [{ parts: [{ text: refinePrompt }], role: "user" }],
-            });
-
-            let accumulatedHtml = '';
-            for await (const chunk of responseStream) {
-                const text = chunk.text;
-                if (typeof text === 'string') {
-                    accumulatedHtml += text;
-                    setSessions(prev => prev.map((sess, si) => 
-                        si === currentSessionIndex ? {
-                            ...sess,
-                            artifacts: sess.artifacts.map((art, ai) => 
-                                ai === focusedArtifactIndex ? { ...art, html: accumulatedHtml } : art
-                            )
-                        } : sess
-                    ));
-                }
-            }
-
-            let finalHtml = accumulatedHtml.trim();
-            if (finalHtml.startsWith('```html')) finalHtml = finalHtml.substring(7).trimStart();
-            if (finalHtml.startsWith('```')) finalHtml = finalHtml.substring(3).trimStart();
-            if (finalHtml.endsWith('```')) finalHtml = finalHtml.substring(0, finalHtml.length - 3).trimEnd();
-
-            setSessions(prev => prev.map((sess, si) => 
-                si === currentSessionIndex ? {
-                    ...sess,
-                    artifacts: sess.artifacts.map((art, ai) => 
-                        ai === focusedArtifactIndex ? { ...art, html: finalHtml, status: 'complete' } : art
-                    )
-                } : sess
-            ));
-        } catch (e) {
-            console.error("Refinement failed", e);
-        } finally {
-            setIsLoading(false);
-        }
-        return;
-    }
-
     const baseTime = Date.now();
     const sessionId = generateId();
 
@@ -651,7 +387,11 @@ Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.
         }
 
         if (!generatedStyles || generatedStyles.length < 3) {
-            generatedStyles = ["Primary Pigment Gridwork", "Tactile Risograph Layering", "Kinetic Silhouette Balance"];
+            generatedStyles = [
+                "Primary Pigment Gridwork",
+                "Tactile Risograph Layering",
+                "Kinetic Silhouette Balance"
+            ];
         }
         
         generatedStyles = generatedStyles.slice(0, 3);
@@ -678,8 +418,7 @@ ${attachment ? "Use the provided image as a strict visual reference for the layo
 **VISUAL EXECUTION RULES:**
 1. **Materiality**: Use the specified metaphor to drive every CSS choice.
 2. **Typography**: Use high-quality web fonts. Pair a bold sans-serif with a refined monospace for data.
-3. **Motion**: Include subtle, high-performance CSS/JS animations. 
-   CRITICAL: Use the CSS variable var(--flash-speed, 1) to multiply your animation and transition durations (e.g., transition: all calc(0.3s / var(--flash-speed, 1)) ease).
+3. **Motion**: Include subtle, high-performance CSS/JS animations.
 4. **IP SAFEGUARD**: No artist names or trademarks. 
 5. **Layout**: Be bold with negative space and hierarchy. Avoid generic cards.
 
@@ -745,7 +484,7 @@ Return ONLY RAW HTML. No markdown fences.
         setIsLoading(false);
         setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [inputValue, attachment, isLoading, sessions, currentSessionIndex, focusedArtifactIndex]);
+  }, [inputValue, attachment, isLoading, sessions.length]);
 
   const handleSurpriseMe = () => {
       const currentPrompt = placeholders[placeholderIndex];
@@ -779,7 +518,7 @@ Return ONLY RAW HTML. No markdown fences.
       }
   }, [currentSessionIndex, focusedArtifactIndex]);
 
-  const isLoadingDrawer = isLoading && (drawerState.mode === 'variations' || drawerState.mode === 'code') && !drawerState.data && componentVariations.length === 0;
+  const isLoadingDrawer = isLoading && drawerState.mode === 'variations' && componentVariations.length === 0;
 
   const hasStarted = (sessions.length > 0 && currentSessionIndex !== -1) || isLoading;
   const currentSession = sessions[currentSessionIndex];
@@ -797,44 +536,24 @@ Return ONLY RAW HTML. No markdown fences.
       }
   }
 
-  const focusedArtifact = (currentSessionIndex !== -1 && focusedArtifactIndex !== null) 
-    ? sessions[currentSessionIndex]?.artifacts[focusedArtifactIndex] 
-    : null;
-
   return (
     <>
-        {/* Native Mobile Header */}
-        <div className={`native-header ${hasStarted ? 'visible' : ''}`}>
-            <div className="header-left">
-                {focusedArtifactIndex !== null ? (
-                    <button className="header-icon-btn" onClick={() => setFocusedArtifactIndex(null)} aria-label="Back to Grid">
-                        <ArrowLeftIcon />
-                    </button>
-                ) : (
-                    <button className="header-icon-btn" onClick={handleHome} aria-label="Home">
-                        <HomeIcon />
-                    </button>
-                )}
-            </div>
-            <div className="header-center">
-                <span className="header-title">{focusedArtifact ? focusedArtifact.styleName : 'Flash UI'}</span>
-            </div>
-            <div className="header-right">
-                <button className="header-icon-btn" onClick={handleOpenLibrary} aria-label="Library">
-                    <LibraryIcon />
-                </button>
-            </div>
+        <div className={`top-nav-controls ${hasStarted ? 'visible' : ''}`}>
+            <button className="home-button" onClick={handleHome} aria-label="Home">
+                <HomeIcon />
+            </button>
+            <button className="library-nav-button" onClick={handleOpenLibrary} aria-label="Library">
+                <LibraryIcon />
+            </button>
         </div>
 
-        <a href="https://x.com/Shafeeq" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted && focusedArtifactIndex === null ? '' : hasStarted ? 'hide-on-mobile' : ''}`}>
-            @Shafeeq
+        <a href="https://x.com/Shafeeq" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted ? 'hide-on-mobile' : ''}`}>
+            created by @Shafeeq
         </a>
 
         <FullscreenModal 
-            artifact={fullscreenArtifact ? { ...fullscreenArtifact, html: injectControlScript(fullscreenArtifact.html) } : null} 
+            artifact={fullscreenArtifact} 
             onClose={() => setFullscreenArtifact(null)} 
-            isPaused={isPaused}
-            speed={animationSpeed}
         />
 
         <SideDrawer 
@@ -845,25 +564,16 @@ Return ONLY RAW HTML. No markdown fences.
             {isLoadingDrawer && (
                  <div className="loading-state">
                      <ThinkingIcon /> 
-                     {drawerState.mode === 'variations' ? 'Designing variations...' : 'Processing...'}
+                     Designing variations...
                  </div>
             )}
 
             {drawerState.mode === 'code' && (
                 <div className="code-viewer-container">
-                    <div className="drawer-actions-row">
-                        <button className="drawer-action-btn" onClick={() => handleCopyCode()}>
-                            {isCopied ? <CheckIcon /> : <CopyIcon />}
-                            {isCopied ? 'Copied' : 'Copy HTML'}
-                        </button>
-                        <button className="drawer-action-btn" onClick={handleDownloadCode}>
-                            <DownloadIcon /> Download
-                        </button>
-                        <button className="drawer-action-btn spec-btn" onClick={handleCopyProjectSpec} disabled={isLoading}>
-                            {isSpecCopied ? <CheckIcon /> : <FileTextIcon />}
-                            {isSpecCopied ? 'Copied Spec' : 'Project Spec'}
-                        </button>
-                    </div>
+                    <button className="copy-code-btn" onClick={handleCopyCode}>
+                        {isCopied ? <CheckIcon /> : <CopyIcon />}
+                        {isCopied ? 'Copied' : 'Copy'}
+                    </button>
                     <pre className="code-block"><code>{drawerState.data}</code></pre>
                 </div>
             )}
@@ -910,12 +620,18 @@ Return ONLY RAW HTML. No markdown fences.
         </SideDrawer>
 
         <div className="immersive-app">
-            <DottedGlowBackground gap={24} radius={1.5} color="rgba(255, 255, 255, 0.02)" glowColor="rgba(255, 255, 255, 0.15)" speedScale={0.5} />
+            <DottedGlowBackground 
+                gap={24} 
+                radius={1.5} 
+                color="rgba(255, 255, 255, 0.02)" 
+                glowColor="rgba(255, 255, 255, 0.15)" 
+                speedScale={0.5} 
+            />
 
             <div className={`stage-container ${focusedArtifactIndex !== null ? 'mode-focus' : 'mode-split'}`}>
                  <div className={`empty-state ${hasStarted ? 'fade-out' : ''}`}>
                      <div className="empty-content">
-                         <h1>Flash UI</h1>
+                         <h1>UI Generator</h1>
                          <p>Creative UI generation in a flash</p>
                          <button className="surprise-button" onClick={handleSurpriseMe} disabled={isLoading}>
                              <SparklesIcon /> Surprise Me
@@ -932,18 +648,20 @@ Return ONLY RAW HTML. No markdown fences.
                     return (
                         <div key={session.id} className={`session-group ${positionClass}`}>
                             <div className="artifact-grid" ref={sIndex === currentSessionIndex ? gridScrollRef : null}>
-                                {session.artifacts.map((artifact, aIndex) => (
-                                    <ArtifactCard 
-                                        key={artifact.id}
-                                        artifact={{ ...artifact, html: injectControlScript(artifact.html) }}
-                                        isFocused={focusedArtifactIndex === aIndex}
-                                        onClick={() => setFocusedArtifactIndex(aIndex)}
-                                        onFullscreen={setFullscreenArtifact}
-                                        onSave={handleSaveToLibrary}
-                                        isPaused={isPaused}
-                                        speed={animationSpeed}
-                                    />
-                                ))}
+                                {session.artifacts.map((artifact, aIndex) => {
+                                    const isFocused = focusedArtifactIndex === aIndex;
+                                    
+                                    return (
+                                        <ArtifactCard 
+                                            key={artifact.id}
+                                            artifact={artifact}
+                                            isFocused={isFocused}
+                                            onClick={() => setFocusedArtifactIndex(aIndex)}
+                                            onFullscreen={setFullscreenArtifact}
+                                            onSave={handleSaveToLibrary}
+                                        />
+                                    );
+                                })}
                             </div>
                         </div>
                     );
@@ -961,92 +679,80 @@ Return ONLY RAW HTML. No markdown fences.
                 </button>
              )}
 
-            <div className={`action-bar ${focusedArtifactIndex !== null ? 'visible focused-top' : 'visible'}`}>
-                 <div className="active-prompt-label">{currentSession?.prompt}</div>
-                 <div className="action-buttons scroll-x-mobile">
-                    <div className="animation-control-group">
-                        <button className="anim-toggle-btn" onClick={() => setIsPaused(!isPaused)}>
-                            {isPaused ? <PlayIcon /> : <PauseIcon />}
-                        </button>
-                        <div className="speed-slider-container">
-                            <span className="speed-label">{animationSpeed}x</span>
-                            <input type="range" min="0.1" max="3" step="0.1" value={animationSpeed} onChange={(e) => setAnimationSpeed(parseFloat(e.target.value))} />
-                        </div>
-                    </div>
-                    <button onClick={() => setFocusedArtifactIndex(null)} className="hide-on-mobile">
-                        <GridIcon /> Grid
+            <div className={`action-bar ${focusedArtifactIndex !== null ? 'visible' : ''}`}>
+                 <div className="active-prompt-label">
+                    {currentSession?.prompt}
+                 </div>
+                 <div className="action-buttons">
+                    <button onClick={() => setFocusedArtifactIndex(null)}>
+                        <GridIcon /> Grid View
                     </button>
                     <button onClick={handleGenerateVariations} disabled={isLoading}>
                         <SparklesIcon /> Variations
                     </button>
-                    <button className="direct-copy-btn" onClick={() => handleCopyCode(focusedArtifact?.html)}>
-                        {isActionBarCopied ? <CheckIcon /> : <CopyIcon />} {isActionBarCopied ? 'Copied' : 'Copy HTML'}
-                    </button>
-                    <button className="full-site-btn" onClick={handleConvertToWebsite} disabled={isLoading}>
-                        <GlobeIcon /> Website
-                    </button>
                     <button onClick={handleShowCode}>
-                        <CodeIcon /> Export
+                        <CodeIcon /> Source
                     </button>
                  </div>
             </div>
 
             <div className="floating-input-container">
-                {focusedArtifact && !isLoading && (
-                    <div className="quick-refine-chips scroll-x-mobile">
-                        <button onClick={() => handleSendMessage("Switch to dark mode")}>Dark Mode</button>
-                        <button onClick={() => handleSendMessage("Add minimalist animations")}>Animate</button>
-                        <button onClick={() => handleSendMessage("Increase spacing and font size")}>Bolder</button>
-                        <button onClick={() => handleSendMessage("Convert to glassmorphism style")}>Glassy</button>
-                        <button onClick={() => handleSendMessage("Add a modern search bar")}>Search Bar</button>
-                    </div>
-                )}
-                
                 {attachment && (
                     <div className="attachment-preview">
                         <img src={attachment} alt="Reference" />
-                        <button className="remove-attachment-btn" onClick={removeAttachment}><XIcon /></button>
+                        <button className="remove-attachment-btn" onClick={removeAttachment}>
+                            <XIcon />
+                        </button>
                     </div>
                 )}
-                
-                <div className={`input-wrapper ${isLoading ? 'loading' : ''} ${focusedArtifact ? 'refining' : ''}`}>
-                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} accept="image/*" />
-                    <button className={`attach-button ${attachment ? 'active' : ''}`} onClick={triggerFileSelect} disabled={isLoading} title="Attach reference image">
+                <div className={`input-wrapper ${isLoading ? 'loading' : ''}`}>
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleFileSelect} 
+                        style={{ display: 'none' }} 
+                        accept="image/*"
+                    />
+                    <button 
+                        className={`attach-button ${attachment ? 'active' : ''}`} 
+                        onClick={triggerFileSelect}
+                        disabled={isLoading}
+                        title="Attach reference image"
+                    >
                         <PaperclipIcon />
                     </button>
                     
                     {(!inputValue && !isLoading && !attachment) && (
                         <div className="animated-placeholder" key={placeholderIndex}>
-                            {focusedArtifact ? (
-                                <span className="placeholder-text refining-text">Refine component...</span>
-                            ) : (
-                                <>
-                                    <span className="placeholder-text">{placeholders[placeholderIndex]}</span>
-                                    <span className="tab-hint">Tab</span>
-                                </>
-                            )}
+                            <span className="placeholder-text">{placeholders[placeholderIndex]}</span>
+                            <span className="tab-hint">Tab</span>
                         </div>
                     )}
                     
                     {!isLoading ? (
-                        <input ref={inputRef} type="text" value={inputValue} onChange={handleInputChange} onKeyDown={handleKeyDown} disabled={isLoading} />
+                        <input 
+                            ref={inputRef}
+                            type="text" 
+                            value={inputValue} 
+                            onChange={handleInputChange} 
+                            onKeyDown={handleKeyDown} 
+                            disabled={isLoading} 
+                        />
                     ) : (
                         <div className="input-generating-label">
-                            <span className="generating-prompt-text">{focusedArtifact ? `Updating...` : currentSession?.prompt}</span>
+                            <span className="generating-prompt-text">{currentSession?.prompt}</span>
                             <ThinkingIcon />
                         </div>
                     )}
                     
-                    <button className="send-button" onClick={() => handleSendMessage()} disabled={isLoading || (!inputValue.trim() && !attachment)}>
-                        {focusedArtifact ? <WandIcon /> : <ArrowUpIcon />}
+                    <button 
+                        className="send-button" 
+                        onClick={() => handleSendMessage()} 
+                        disabled={isLoading || (!inputValue.trim() && !attachment)}
+                    >
+                        <ArrowUpIcon />
                     </button>
                 </div>
-                
-                {focusedArtifact && !isLoading && (
-                    <div className="refine-badge hide-on-mobile">
-                        <WandIcon /> <span>Refining: {focusedArtifact.styleName}</span>
-                    </div>
-                )}
             </div>
         </div>
     </>

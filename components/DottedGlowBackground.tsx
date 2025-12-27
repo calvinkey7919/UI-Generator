@@ -35,7 +35,15 @@ const DottedGlowBackground: React.FC<DottedGlowBackgroundProps> = ({
             canvas.height = window.innerHeight;
         };
         resize();
-        window.addEventListener('resize', resize);
+        
+        // Debounce resize handler to improve performance
+        let resizeTimeout: NodeJS.Timeout;
+        const debouncedResize = () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(resize, 100);
+        };
+        
+        window.addEventListener('resize', debouncedResize);
 
         let time = 0;
         const animate = () => {
@@ -81,7 +89,8 @@ const DottedGlowBackground: React.FC<DottedGlowBackgroundProps> = ({
         animate();
 
         return () => {
-            window.removeEventListener('resize', resize);
+            clearTimeout(resizeTimeout);
+            window.removeEventListener('resize', debouncedResize);
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
             }
